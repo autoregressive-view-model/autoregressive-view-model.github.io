@@ -1,0 +1,52 @@
+name: Deploy AVM website
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: github-pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Check out site source
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v5
+
+      - name: Package website files
+        run: |
+          site="$RUNNER_TEMP/avm-pages"
+          mkdir "$site"
+          git archive HEAD -- .nojekyll index.html main.html technical_details.html \
+            favicon.svg homepage_assets.js camera_viewer.js loop_carousel.js \
+            affiliations assets results | tar -xf - -C "$site"
+          bytes=$(find "$site" -type f -printf '%s\n' | awk '{ total += $1 } END { printf "%.0f\n", total }')
+          if [ "$bytes" -ge 1000000000 ]; then
+            echo "::error::The Pages site is $bytes bytes and exceeds the 1 GB budget."
+            exit 1
+          fi
+          echo "Packaged $bytes bytes for GitHub Pages."
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: ${{ runner.temp }}/avm-pages
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
