@@ -1,6 +1,6 @@
 /* Authored instructions tied to native camera-frame ranges. */
 (function (root) { root.AVMEventPrompts = {
-  "schema": "yuzu.event_instructions/3",
+  "schema": "avm.event_instructions/3",
   "basis": "Suggested captions from reviewed visible transitions; not recorded generation prompts.",
   "examples": {
     "a7adfb85c0672c8f": {

@@ -138,8 +138,8 @@ body[data-render] .notice{display:none}.camera-viewer-canvas{height:380px}
 
 </main>
 </div>
-<script src="camera_viewer.js?v=a7c886909d4f"></script>
-<script src="homepage_assets.js?v=9dede27aee36"></script>
+<script src="camera_viewer.js?v=cca138d336ae"></script>
+<script src="homepage_assets.js?v=fbaed8869ff1"></script>
 <script>
 (async function () {
   'use strict';
@@ -147,7 +147,7 @@ body[data-render] .notice{display:none}.camera-viewer-canvas{height:380px}
   root.setAttribute('aria-busy','true');
   requestAnimationFrame(updateLinks);
   new ResizeObserver(()=>{updateLinks();if(window.parent!==window)window.parent.postMessage({type:'avm-height',height:Math.ceil(document.querySelector('.animation-scroll').getBoundingClientRect().height)},location.origin);}).observe(root);
-  await AVMHomepageAssets.ready;
+
   const mediaUrl=url=>AVMHomepageAssets.resolve(String(url));
   const scrollRegion=document.querySelector('.animation-scroll');let panelDrag=null;
   scrollRegion.addEventListener('pointerdown',event=>{
@@ -160,19 +160,7 @@ body[data-render] .notice{display:none}.camera-viewer-canvas{height:380px}
   scrollRegion.addEventListener('keydown',event=>{if(event.target!==scrollRegion||!['ArrowLeft','ArrowRight'].includes(event.key))return;event.preventDefault();scrollRegion.scrollBy({left:event.key==='ArrowLeft'?-120:120,behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'instant':'smooth'});});
   const render=new URLSearchParams(location.search).has('render');
   if(render) document.body.dataset.render='1';
-  const asset='https://media.avm.invalid/x96d8f1cd43/x5756e5ede0/x7f83f2aa4a/x56ecab341f/x548f820cbc/';
-  let example;
-  try {
-    const preview = asset + 'preview-9b20f86e1432.json?v=9b20f86e1432';
-    if (AVMHomepageAssets.localCopy) {
-      example = await AVMHomepageAssets.json(preview);
-    } else {
-      const url = await AVMHomepageAssets.immutable(preview);
-      example = await (await fetch(url)).json();
-    }
-  } catch (error) {
-    example = await AVMHomepageAssets.json(asset + 'example.json');
-  }
+  const example = await AVMHomepageAssets.json('assets/animation.json.gz');
   const calibration=example.intrinsics;
   if(calibration.camera_convention!=='opencv'||example.video_frame_count!==example.target_trajectory.length) throw new Error('Unsupported camera records');
   const K=[[calibration.fl_x,0,calibration.cx],[0,calibration.fl_y,calibration.cy],[0,0,1]];
@@ -182,24 +170,24 @@ body[data-render] .notice{display:none}.camera-viewer-canvas{height:380px}
   const blank=document.createElement('canvas');blank.width=384;blank.height=216;
   const blankContext=blank.getContext('2d');blankContext.fillStyle='#fafafa';blankContext.fillRect(0,0,384,216);
   const emptyImage=blank.toDataURL(),outputVideo=query('[data-output]');outputVideo.loop=false;const firstClip=example.output_segments[0];
-  if(firstClip.poster_file)AVMHomepageAssets.immutable(asset+firstClip.poster_file+'?v='+firstClip.poster_sha256.slice(0,12)).then(url=>{if(!window.__avmStarted)outputVideo.poster=url;}).catch(()=>{});
+  if(firstClip.poster_file)AVMHomepageAssets.immutable(firstClip.poster_file+'?v='+firstClip.poster_sha256.slice(0,12)).then(url=>{if(!window.__avmStarted)outputVideo.poster=url;}).catch(()=>{});
   function syncOutputPlayback(){root.dataset.outputPlaying=String(!outputVideo.paused&&!outputVideo.ended);if(window.TechnicalDetails?.ready)sync();}
   ['play','pause','ended','emptied'].forEach(event=>outputVideo.addEventListener(event,syncOutputPlayback));
   syncOutputPlayback();
   let atlas=null,atlasStart=0,atlasPage=-1;
   const atlasPages=example.atlas_pages||[{file:example.atlas_file,sha256:example.atlas_sha256,start_frame:0,end_frame:example.video_frame_count}];
   const clipLoads=new Map();
-  function clipUrl(clip){if(!clipLoads.has(clip.file))clipLoads.set(clip.file,AVMHomepageAssets.immutable(asset+clip.file+'?v='+clip.sha256.slice(0,12)).catch(()=>mediaUrl(asset+clip.file+'?v='+clip.sha256.slice(0,12))));return clipLoads.get(clip.file);}
+  function clipUrl(clip){if(!clipLoads.has(clip.file))clipLoads.set(clip.file,AVMHomepageAssets.immutable(clip.file+'?v='+clip.sha256.slice(0,12)).catch(()=>mediaUrl(clip.file+'?v='+clip.sha256.slice(0,12))));return clipLoads.get(clip.file);}
   function warmBlock(index){
     const clipIndex=example.output_segments.findIndex(clip=>index>=clip.start_frame&&index<clip.end_frame);
-    example.output_segments.slice(Math.max(0,clipIndex),Math.max(0,clipIndex)+2).forEach(clip=>{clipUrl(clip);if(clip.poster_file)AVMHomepageAssets.immutable(asset+clip.poster_file+'?v='+clip.poster_sha256.slice(0,12)).catch(()=>{});});
-    atlasPages.filter(page=>page.end_frame>index&&page.start_frame<index+24).forEach(page=>AVMHomepageAssets.immutable(asset+page.file+'?v='+page.sha256.slice(0,12)).catch(()=>{}));
+    example.output_segments.slice(Math.max(0,clipIndex),Math.max(0,clipIndex)+2).forEach(clip=>{clipUrl(clip);if(clip.poster_file)AVMHomepageAssets.immutable(clip.poster_file+'?v='+clip.poster_sha256.slice(0,12)).catch(()=>{});});
+    atlasPages.filter(page=>page.end_frame>index&&page.start_frame<index+24).forEach(page=>AVMHomepageAssets.immutable(page.file+'?v='+page.sha256.slice(0,12)).catch(()=>{}));
   }
   async function loadAtlas(index){
     const page=atlasPages.findIndex(item=>index>=item.start_frame&&index<item.end_frame);
     if(page<0)throw new Error('Missing output atlas page');
     if(page===atlasPage)return;
-    const image=new Image();image.src=await AVMHomepageAssets.immutable(asset+atlasPages[page].file+'?v='+atlasPages[page].sha256.slice(0,12));
+    const image=new Image();image.src=await AVMHomepageAssets.immutable(atlasPages[page].file+'?v='+atlasPages[page].sha256.slice(0,12));
     await image.decode();atlas=image;atlasStart=atlasPages[page].start_frame;atlasPage=page;
   }
   const imageCache=new Map();
@@ -217,7 +205,7 @@ body[data-render] .notice{display:none}.camera-viewer-canvas{height:380px}
     }
     return imageCache.get(index);
   }
-  const inputs=example.inputs.map((item,i)=>({id:item.id,frame:contextFrames[i],url:mediaUrl(asset+(item.preview_file||item.file)+'?v='+(item.preview_sha256||item.sha256).slice(0,12)),fullUrl:mediaUrl(asset+item.file+'?v='+item.sha256.slice(0,12)),origin:'observed',scene_time:0}));
+  const inputs=example.inputs.map((item,i)=>({id:item.id,frame:contextFrames[i],url:mediaUrl((item.preview_file||item.file)+'?v='+(item.preview_sha256||item.sha256).slice(0,12)),fullUrl:mediaUrl(item.file+'?v='+item.sha256.slice(0,12)),origin:'observed',scene_time:0}));
   function inputSlide(index){
     const item=inputs[index],figure=document.createElement('figure');figure.className='animation-input-reference';
     const button=document.createElement('button');button.type='button';button.dataset.sourceId=item.id;button.setAttribute('aria-label','Enlarge input '+item.id);
@@ -263,10 +251,10 @@ body[data-render] .notice{display:none}.camera-viewer-canvas{height:380px}
   const BLOCK_FRAMES=12,LATENTS=3,FRAMES_PER_LATENT=4;
   let displayedIndex=-1,blockSize=12,segments=[],segmentWindow=null,segmentCallback=null,segmentResolve=null;
   const motion=matchMedia('(prefers-reduced-motion: reduce)');
-  function tracks(){return {schema:'wcm.camera_paths/1',coordinate_system:'opencv_c2w',contexts:inputs.map(item=>({id:item.id,source_id:item.id,color:'#58C4DD',fps:example.video_fps,frames:[item.frame]})),target:{fps:example.video_fps,frames}};}
+  function tracks(){return {schema:'avm.camera_paths/1',coordinate_system:'opencv_c2w',contexts:inputs.map(item=>({id:item.id,source_id:item.id,color:'#58C4DD',fps:example.video_fps,frames:[item.frame]})),target:{fps:example.video_fps,frames}};}
   function mount(){
     controller?.dispose();
-    controller=WCMCameraViewer.mount(query('[data-spatial-viewer]'),tracks(),null,{compact:true,theme:'light',highlightColor:'#C7A918',targetColor:'#FF862F',references:[],onPlaybackToggle:()=>{if(!playing&&manualMode&&segmentWindow&&!busy)toggleSegment();else toggleFull();},onSelectContext:selection=>{
+    controller=AVMCameraViewer.mount(query('[data-spatial-viewer]'),tracks(),null,{compact:true,theme:'light',highlightColor:'#C7A918',targetColor:'#FF862F',references:[],onPlaybackToggle:()=>{if(!playing&&manualMode&&segmentWindow&&!busy)toggleSegment();else toggleFull();},onSelectContext:selection=>{
       const slide=[...inputRail.children].find(element=>element.querySelector('button').dataset.sourceId===selection.source_id);
       if(!slide)return;
       inputRail.scrollTo({left:slide.offsetLeft-inputRail.firstElementChild.offsetLeft,behavior:motion.matches?'instant':'smooth'});
@@ -354,7 +342,7 @@ body[data-render] .notice{display:none}.camera-viewer-canvas{height:380px}
   const distance=(a,b)=>Math.hypot(...a.map((value,i)=>value-b[i]));
   const radius=Math.max(example.anchor_radius||1,0.2);
   function visibleFraction(source,target){
-    const origin=position(target),points=WCMCameraViewer.frustumVertices(source,radius*2).slice(1);
+    const origin=position(target),points=AVMCameraViewer.frustumVertices(source,radius*2).slice(1);
     let visible=0;
     for(const point of points){const relative=point.map((value,i)=>value-origin[i]);const local=[0,1,2].map(axis=>dot(target.c2w.slice(0,3).map(row=>row[axis]),relative));if(local[2]<=1e-6)continue;const x=target.K[0][0]*local[0]/local[2]+target.K[0][2],y=target.K[1][1]*local[1]/local[2]+target.K[1][2];if(x>=0&&x<=target.width&&y>=0&&y<=target.height)visible++;}
     return visible/points.length;
@@ -455,7 +443,7 @@ body[data-render] .notice{display:none}.camera-viewer-canvas{height:380px}
     pool=[...inputs];segments=[];selected=[...inputs];index=0;displayedIndex=-1;blockSize=Math.min(BLOCK_FRAMES,frames.length);phase='prefill-inputs';tokens.clear();motionContext=[];retrievedContext=[];pendingMotion=[];motionSourceBounds=[];outgoingMotionCount=0;mount();showSelected();
     for(const cell of query('[data-latents]').children)cell.classList.remove('current','filled');
     outputVideo.style.opacity='1';outputVideo.removeAttribute('src');outputVideo.load();
-    if(firstClip.poster_file)AVMHomepageAssets.immutable(asset+firstClip.poster_file+'?v='+firstClip.poster_sha256.slice(0,12)).then(url=>{if(phase==='prefill-inputs')outputVideo.poster=url;}).catch(()=>{});
+    if(firstClip.poster_file)AVMHomepageAssets.immutable(firstClip.poster_file+'?v='+firstClip.poster_sha256.slice(0,12)).then(url=>{if(phase==='prefill-inputs')outputVideo.poster=url;}).catch(()=>{});
     sync();
   }
   function segmentFrame(now,metadata){
@@ -476,7 +464,7 @@ body[data-render] .notice{display:none}.camera-viewer-canvas{height:380px}
     const clip=example.output_segments.find(clip=>clip.start_frame===items[0].frameIndex);
     if(!clip)throw new Error('Generated video segment unavailable');
     segmentWindow={start:items[0].frame.time,first:items[0].frameIndex,last:items.at(-1).frameIndex,lastTime:(items.length-1)/example.video_fps,previousTime:-1};
-    const url=await clipUrl(clip),poster=clip.poster_file?await AVMHomepageAssets.immutable(asset+clip.poster_file+'?v='+clip.poster_sha256.slice(0,12)):items[0].image.src;
+    const url=await clipUrl(clip),poster=clip.poster_file?await AVMHomepageAssets.immutable(clip.poster_file+'?v='+clip.poster_sha256.slice(0,12)):items[0].image.src;
     const loaded=new Promise((resolve,reject)=>{
       const cleanup=()=>{outputVideo.removeEventListener('loadeddata',success);outputVideo.removeEventListener('error',failure);},success=()=>{cleanup();resolve();},failure=()=>{cleanup();reject(new Error('Output video could not load'));};
       outputVideo.addEventListener('loadeddata',success,{once:true});outputVideo.addEventListener('error',failure,{once:true});

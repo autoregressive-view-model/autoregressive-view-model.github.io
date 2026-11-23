@@ -109,5 +109,5 @@
     jump(physical); sync();
     return {go, move, dispose() {clearTimeout(timer); observer.disconnect(); listeners.forEach(remove => remove());}};
   }
-  global.YuzuLoopCarousel = {mount};
+  global.AVMLoopCarousel = {mount};
 })(window);

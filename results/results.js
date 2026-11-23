@@ -1,17 +1,9 @@
-/* Results: source media and native camera grids, presented in the WCM card style. */
+/* Results: source media and native camera grids, presented in the gallery layout. */
 (async function () {
   'use strict';
   const host=document.querySelector('main');if(!host?.querySelector('[data-result-section]'))return;
-  await AVMHomepageAssets.ready;
-  const mediaUrl=url=>AVMHomepageAssets.resolve(String(url));
-  const rootUrl=new URL('https://media.avm.invalid/x96d8f1cd43/x5756e5ede0/x7f83f2aa4a/x56ecab341f/x3baf9e9373/');
-  let catalogue=null;
-  for(const file of ['homepage_examples.json','examples.json']){
-    try{
-      catalogue=await AVMHomepageAssets.json(new URL(file,rootUrl));break;
-    }catch(error){if(file==='examples.json')throw error;}
-  }
-  if(!catalogue)throw new Error('Results catalogue unavailable');
+  const mediaUrl = AVMHomepageAssets.resolve;
+  const catalogue = await AVMHomepageAssets.json('assets/gallery.json.gz');
   const controllers=new Map(),cameraCache=new Map();
   const imageObserver=new IntersectionObserver(entries=>entries.forEach(entry=>{
     if(entry.isIntersecting){entry.target.src=entry.target.dataset.mediaSrc;imageObserver.unobserve(entry.target);}
@@ -23,45 +15,11 @@
   const arrows={previous:'<path d="M10 2 4 8l6 6"/>',next:'<path d="M6 2l6 6-6 6"/>'};
   function button(label,direction){const b=document.createElement('button');b.type='button';b.className='cbtn';b.setAttribute('aria-label',label);b.innerHTML='<svg viewBox="0 0 16 16" fill="none" aria-hidden="true" stroke="currentColor" stroke-width="1.5">'+arrows[direction]+'</svg>';return b;}
   function element(tag,className){const e=document.createElement(tag);if(className)e.className=className;return e;}
-  let bundlePromise=null;
-  async function cameraData(example) {
-    if (AVMHomepageAssets.mode !== 'manifold') {
-      if(!cameraCache.has(example.id))cameraCache.set(example.id,(async()=>{
-        try{
-          if(!example.camera_file)throw new Error('No individual camera path');
-          const response=await fetch(mediaUrl(new URL(example.camera_file+'?v='+(example.camera_sha256||'').slice(0,12),rootUrl)));
-          if(!response.ok)throw new Error('Individual camera path unavailable');
-          return response.json();
-        }catch(error){
-          if(!bundlePromise)bundlePromise=fetch(mediaUrl(new URL(catalogue.camera_bundle_file+'?v='+catalogue.camera_bundle_sha256.slice(0,12),rootUrl))).then(r=>r.json());
-          return bundlePromise.then(data=>data[example.id]);
-        }
-      })());
-      return cameraCache.get(example.id);
+  function cameraData(example) {
+    if (!cameraCache.has(example.id)) {
+      const load = AVMHomepageAssets.json(example.camera).catch(error => { cameraCache.delete(example.id); throw error; });
+      cameraCache.set(example.id, load);
     }
-    if (!cameraCache.has(example.id)) cameraCache.set(example.id, (async () => {
-      const base = example.camera_source_base || example.video.split('/gen/')[0];
-      async function metadata(path) { return AVMHomepageAssets.json(base + path); }
-      const [input, output, sample] = await Promise.all([metadata('/input/scene_meta.json'), metadata('/gen/scene_meta.json'), metadata('/sample_meta.json')]);
-      const fps = Number(sample.playback_fps || output.fps || example.media?.fps || 16);
-      function frame(meta, value, index) {
-        const calibration = meta.shared_intrinsics ? meta : {...meta, ...value};
-        const K = value.K || meta.K || [[calibration.fl_x,0,calibration.cx],[0,calibration.fl_y,calibration.cy],[0,0,1]];
-        return {id:value.frame_name,time:index/fps,width:value.w||meta.w,height:value.h||meta.h,K,c2w:value.transform_matrix};
-      }
-      const contexts = example.inputs.map(asset => {
-        const id = asset.url.match(/(\d{6}_\d{6})/);
-        const chunk = asset.url.match(/input_(\d+)/) || asset.source_id.match(/input-(\d+)/);
-        const frames = (input.frames || []).filter(value => id ? value.frame_name === id[1] : chunk && value.frame_name.startsWith(chunk[1] + '_')).map((value,index) => frame(input,value,index));
-        return {id:asset.source_id,source_id:asset.source_id,kind:asset.type,fps,frames};
-      }).filter(track => track.frames.length);
-      const targetChunk = example.video.match(/gen_(\d{6})\.mp4/)?.[1] || '000000';
-      let records = (output.frames || []).filter(value => value.frame_name.startsWith(targetChunk + '_'));
-      if (example.frame_range) records = records.slice(example.frame_range.start, example.frame_range.end);
-      const frames = records.map((value,index) => frame(output,value,index));
-      if (!frames.length) throw new Error('Default output camera path is empty');
-      return {schema:'wcm.camera_paths/1',coordinate_system:'opencv_c2w',contexts,target:{fps,frames}};
-    })());
     return cameraCache.get(example.id);
   }
   function openInput(inputs,index,originals,onSelect){
@@ -114,10 +72,10 @@
   }
   function card(id,options={}){
     const example=catalogue.examples[id],article=element('article','result-card'),layout=element('div','spatial-layout');
-    article.dataset.exampleId=id;article.dataset.sourceScene=example.provenance.source_scene;
+    article.dataset.exampleId=id;
     const left=element('div','spatial-left'),gallery=element('div','reference-gallery'),track=element('div','reference-track');track.tabIndex=0;track.setAttribute('aria-label','Input references');
     const controls=element('div','reference-controls'),prev=button('Previous input','previous'),next=button('Next input','next');controls.append(prev,next);gallery.append(track,controls);
-    const refs=[],referenceInstances=[],denseContext=example.dataset==='data8dfdea5e30';
+    const refs=[],referenceInstances=[],denseContext=example.dense;
     let selectedReference=null;
     function referenceSlide(index){
       const asset=example.inputs[index],slide=element('figure','reference-slide'),media=element(asset.type==='video'?'video':'img');
@@ -132,13 +90,13 @@
       return slide;
     }
     const referenceSlides=example.inputs.map((asset,index)=>{const slide=referenceSlide(index);refs.push(slide.firstChild);return slide;});
-    const referenceCarousel=YuzuLoopCarousel.mount(track,referenceSlides,{clone:(slide,index)=>referenceSlide(index),dragExclude:'button,input,select,a',onChange:(index,slide)=>{if(denseContext){selectedReference=slide.firstChild;controllers.get(article)?.setContextImageElement(example.inputs[index].source_id,selectedReference);}}});
+    const referenceCarousel=AVMLoopCarousel.mount(track,referenceSlides,{clone:(slide,index)=>referenceSlide(index),dragExclude:'button,input,select,a',onChange:(index,slide)=>{if(denseContext){selectedReference=slide.firstChild;controllers.get(article)?.setContextImageElement(example.inputs[index].source_id,selectedReference);}}});
     prev.hidden=next.hidden=example.inputs.length<2;prev.onclick=()=>referenceCarousel.move(-1);next.onclick=()=>referenceCarousel.move(1);
     const viewer=element('div','camera-viewer');viewer.setAttribute('aria-label','Input and requested output cameras');left.append(gallery,viewer);
-    const output=element('figure','spatial-output'),video=element('video');queueVideo(video,eventMediaUrl(example,example.video),previewPoster(example,example.poster));video.muted=true;video.loop=true;video.playsInline=true;video.preload='none';video.setAttribute('aria-label',example.model+' generated result, '+example.dataset);output.append(video);output.tabIndex=0;output.setAttribute('role','button');output.setAttribute('aria-label','Play or pause the output');output.onclick=()=>{loadVideo(video);if(video.paused)video.play().catch(()=>{});else video.pause();};output.onkeydown=e=>{if(e.key===' '||e.key==='Enter'){e.preventDefault();output.click();}};output.onmouseenter=()=>controllers.get(article)?.highlightTarget(true);output.onmouseleave=()=>controllers.get(article)?.highlightTarget(false);
+    const output=element('figure','spatial-output'),video=element('video');queueVideo(video,eventMediaUrl(example,example.video),previewPoster(example,example.poster));video.muted=true;video.loop=true;video.playsInline=true;video.preload='none';video.setAttribute('aria-label','AVM generated result, '+example.scene_id);output.append(video);output.tabIndex=0;output.setAttribute('role','button');output.setAttribute('aria-label','Play or pause the output');output.onclick=()=>{loadVideo(video);if(video.paused)video.play().catch(()=>{});else video.pause();};output.onkeydown=e=>{if(e.key===' '||e.key==='Enter'){e.preventDefault();output.click();}};output.onmouseenter=()=>controllers.get(article)?.highlightTarget(true);output.onmouseleave=()=>controllers.get(article)?.highlightTarget(false);
     const instruction=options.trajectoryCaptions?trajectoryInstruction(example,video):eventInstruction(example,video);if(instruction)output.append(instruction);
     layout.append(left,output);article.append(layout);let visible=false,initialized=false;
-    const observer=new IntersectionObserver(async entries=>{visible=entries[0].isIntersecting;if(!visible){video.pause();referenceInstances.forEach(ref=>ref.element.pause?.());return;}loadVideo(video);referenceInstances.forEach(ref=>{if(ref.element.tagName==='VIDEO')loadVideo(ref.element);});if(!initialized){initialized=true;try{const data=await cameraData(example);if(!article.isConnected)return;const references=denseContext?[]:referenceInstances;const controller=WCMCameraViewer.mount(viewer,data,video,{compact:true,theme:'light',references,singleContextImage:denseContext,onSelectContext:selection=>{const index=example.inputs.findIndex(input=>input.source_id===selection.source_id);if(index>=0)referenceCarousel.go(index);}});controllers.set(article,controller);if(denseContext&&selectedReference)controller.setContextImageElement(selectedReference.dataset.contextId,selectedReference);}catch(error){viewer.textContent='Camera views unavailable.';viewer.classList.add('result-error');}}if(visible&&article.isConnected)video.play().catch(()=>{});},{threshold:.15});observer.observe(article);article.stopObserver=()=>{observer.disconnect();referenceCarousel.dispose();};
+    const observer=new IntersectionObserver(async entries=>{visible=entries[0].isIntersecting;if(!visible){video.pause();referenceInstances.forEach(ref=>ref.element.pause?.());return;}loadVideo(video);referenceInstances.forEach(ref=>{if(ref.element.tagName==='VIDEO')loadVideo(ref.element);});if(!initialized){initialized=true;try{const data=await cameraData(example);if(!article.isConnected)return;const references=denseContext?[]:referenceInstances;const controller=AVMCameraViewer.mount(viewer,data,video,{compact:true,theme:'light',references,singleContextImage:denseContext,onSelectContext:selection=>{const index=example.inputs.findIndex(input=>input.source_id===selection.source_id);if(index>=0)referenceCarousel.go(index);}});controllers.set(article,controller);if(denseContext&&selectedReference)controller.setContextImageElement(selectedReference.dataset.contextId,selectedReference);}catch(error){viewer.textContent='Camera views unavailable.';viewer.classList.add('result-error');}}if(visible&&article.isConnected)video.play().catch(()=>{});},{threshold:.15});observer.observe(article);article.stopObserver=()=>{observer.disconnect();referenceCarousel.dispose();};
     return article;
   }
   function galleryOrder(key, fallback){return catalogue.gallery_orders?.[key]||fallback;}
@@ -185,7 +143,7 @@
     function make(id){return card(id,options);}
     const slides=ids.map(make);
     prev.hidden=next.hidden=ids.length<2;
-    const carousel=YuzuLoopCarousel.mount(track,slides,{clone:(slide,index)=>make(ids[index]),onChange:index=>{
+    const carousel=AVMLoopCarousel.mount(track,slides,{clone:(slide,index)=>make(ids[index]),onChange:index=>{
       const example=catalogue.examples[ids[index]];selectScene(index);caption.replaceChildren();
       if(options.copy){const text=options.copy(example);if(text){const title=element('h4','result-subtitle');title.textContent=text.title;const body=element('p','measure dek');body.textContent=text.body;caption.append(title,body);}}
       options.onChange?.(example,index);
@@ -216,6 +174,6 @@
   const denseExamples=galleryOrder('dense_prefill',catalogue.groups.dense_prefill||[]);
   if(dense&&denseExamples.length)deferGallery(dense,denseExamples,{label:'Choose dense-prefill scene'});
   else if(dense)dense.textContent='Dense prompt examples are loading.';
-  window.YuzuResults={catalogue,getControllers:()=>controllers,getCameraData:cameraData};
-  window.dispatchEvent(new Event('yuzu-results-ready'));
+  window.AVMResults={catalogue,getControllers:()=>controllers,getCameraData:cameraData};
+  window.dispatchEvent(new Event('avm-results-ready'));
 })().catch(error=>{const host=document.querySelector('[data-event-prompting]')||document.querySelector('[data-camera-control]');if(host)host.textContent='Results could not load: '+error.message;});

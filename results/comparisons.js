@@ -5,78 +5,16 @@
   host.classList.add('comparison-pending');
   const skeleton=document.createElement('div');skeleton.className='comparison-loading-layout';skeleton.setAttribute('aria-hidden','true');skeleton.innerHTML='<div class="comparison-loading-context"><i></i><i></i></div><div class="comparison-loading-videos"><i></i><i></i><i></i></div>';host.append(skeleton);
   await new Promise(resolve=>{const observer=new IntersectionObserver(entries=>{if(entries.some(entry=>entry.isIntersecting)){observer.disconnect();resolve();}},{rootMargin:'800px'});observer.observe(host);});
-  await AVMHomepageAssets.ready;
-  const media=url=>AVMHomepageAssets.resolve(String(url));
-  const bootstrap=host.querySelector('[data-comparison-bootstrap]');
-  const data=bootstrap?JSON.parse(bootstrap.content.textContent):await jsonAsset('https://media.avm.invalid/x96d8f1cd43/x5756e5ede0/x7f83f2aa4a/x56ecab341f/x3baf9e9373/comparisons.json?v='+Date.now());const excluded={'text-control':['SEVA'],dynamics:['SEVA','Gen3R','Gen3C']};data.dimensions.forEach(d=>d.cases.forEach(c=>{c.clips=c.clips.filter(v=>!excluded[d.id]?.includes(v.method));}));const panelOrder=['camera-control','text-control','dynamics','sparse-reconstruction','4d-reconstruction','revisiting'];data.dimensions.sort((a,b)=>panelOrder.indexOf(a.id)-panelOrder.indexOf(b.id));
-  const manifestUrl='https://media.avm.invalid/x4d41d9f5a5/x5756e5ede0/x7ca57f56ca/collage/manifest.json';
-  let currentManifest=null,manifestRevision=null,manifestPromise=null;
-  const readyDimensions=new Set(),dimensionLoads=new Map();
-  const sourceRecords=data.dimensions.map(dimension=>({dimension,example:dimension.cases[0],clips:[...dimension.cases[0].clips]}));
-  const sourceSignature=manifest=>JSON.stringify(sourceRecords.map(({dimension,example,clips})=>clips.map(clip=>{const source=currentSource(dimension,example,clip,manifest);return source?[source.video,source.poster,source.fps,source.entry.sceneOverrides?.[example.scene]?.nativeCompletedMetadataSha256]:null;})));
-  const groupName=method=>({'AVM':'Base x9915000fd6','DreamX-World':'DreamX-World AR'})[method]||method;
-  async function jsonAsset(url){
-    const timeout=url.includes('/collage/manifest.json')?60000:30000;
-    for(let attempt=0;attempt<2;attempt++){
-      const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),timeout);
-      try{return await AVMHomepageAssets.json(url,{signal:controller.signal,refresh:url.includes('/collage/manifest.json')});}
-      catch(error){if(attempt===1||(error.status>=400&&error.status<500&&error.status!==429))throw error;await new Promise(resolve=>setTimeout(resolve,500));}
-      finally{clearTimeout(timer);}
-    }
-  }
-  function currentSource(dimension,example,clip,manifest){
-    const pair=manifest.pairs.find(pair=>pair.dataset===dimension.dataset);if(!pair)return null;
-    const entry=pair.entries.find(entry=>entry.group===groupName(clip.method)&&(!entry.disabled)&&((clip.method!=='AVM')||entry.label.includes('x354a247a19'))&&entry.scenes.some(index=>pair.scenes[index].name===example.scene));if(!entry)return null;
-    const override=entry.sceneOverrides?.[example.scene]||{},root=override.sceneBase||override.baseUrl||entry.sceneBase||entry.baseUrl;
-    const base=root?root.replace(/\/$/,'')+'/'+encodeURIComponent(example.scene):manifest.cdnBase.replace(/\/$/,'')+'/'+(override.id||entry.id)+'/'+encodeURIComponent(override.sourceDataset||entry.sourceDataset||dimension.dataset)+'/'+encodeURIComponent(example.scene);
-    return {entry,pair,base,video:base+'/'+(override.gen||entry.gen||manifest.genVideo),poster:base+'/'+(override.posterPath||entry.posterPath||manifest.genPoster),fps:override.playbackFps||entry.playbackFps};
-  }
-  function relativePoses(frames){
-    const origin=frames[0].transform_matrix;return frames.map(frame=>{
-      const pose=frame.transform_matrix,values=[];
-      for(let row=0;row<3;row++){for(let column=0;column<3;column++)values.push([0,1,2].reduce((sum,k)=>sum+origin[k][row]*pose[k][column],0));values.push([0,1,2].reduce((sum,k)=>sum+origin[k][row]*(pose[k][3]-origin[k][3]),0));}return values;
-    });
-  }
-  async function resolveDimension(dimension){
-    if(!manifestPromise)manifestPromise=jsonAsset(manifestUrl+'?v='+Date.now()).then(manifest=>{currentManifest=manifest;manifestRevision=sourceSignature(manifest);return manifest;}).catch(error=>{manifestPromise=null;throw error;});
-    await manifestPromise;
-      const example=structuredClone(dimension.cases[0]),sources=example.clips.map(clip=>currentSource(dimension,example,clip,currentManifest));
-      const loaded=await Promise.all(sources.map(async source=>{if(!source)return null;try{const metadata=await jsonAsset(source.base+'/gen/scene_meta.json');return {...source,metadata,frames:metadata.frames.filter(frame=>frame.frame_name.startsWith('000000_'))};}catch(error){console.warn('Current comparison source unavailable',error);return null;}}));
-      const avm=loaded[example.clips.findIndex(clip=>clip.method==='AVM')];if(!avm?.frames.length)throw new Error('The current AVM collage result is unavailable');
-      const [input,sample]=await Promise.all([jsonAsset(avm.base+'/input/scene_meta.json'),jsonAsset(avm.base+'/sample_meta.json')]);
-      const queryFrames=dimension.id==='sparse-reconstruction'?input.frames.filter(frame=>frame.frame_name.startsWith('000000_')).length:avm.frames.length;
-      example.frame_count=queryFrames;const reference=relativePoses(avm.frames.slice(0,queryFrames));
-      example.clips=example.clips.filter((clip,index)=>{
-        const source=loaded[index];if(!source||source.frames.length<queryFrames)return false;
-        const poses=relativePoses(source.frames.slice(0,queryFrames));if(poses.some((pose,i)=>pose.some((value,j)=>Math.abs(value-reference[i][j])>1e-5))){console.warn('Current comparison camera path differs',clip.method,example.scene);return false;}
-        const canonical=url=>{const value=new URL(url,location.href);return value.origin+decodeURIComponent(value.pathname);},sameVideo=canonical(clip.video)===canonical(source.video),verifiedCount=clip.native_frame_count;
-        clip.video=source.video;clip.poster=source.poster;clip.frame_count=queryFrames;clip.native_frame_count=sameVideo&&verifiedCount?verifiedCount:source.frames.length;clip.playback_fps_override=source.fps||null;clip.fps=source.fps||source.metadata.fps||clip.fps;
-        clip.width=source.metadata.w||clip.width;clip.height=source.metadata.h||clip.height;clip.current_source=source.base;return true;
-      });
-      const scene=avm.pair.scenes.find(scene=>scene.name===example.scene),refs=avm.entry.sceneInputs?.[example.scene]||scene.cond||[];
-      example.inputs=refs.filter(ref=>['image','video'].includes(ref.kind)).map(ref=>({type:ref.kind,source_id:'input-'+String(ref.chunk).padStart(6,'0'),label:ref.kind==='video'?'Input video':'Input view',url:avm.base+'/input/input_'+String(ref.chunk).padStart(6,'0')+(ref.kind==='video'?'.mp4':'.png'),poster:ref.kind==='video'?avm.base+'/input/images/'+String(ref.chunk).padStart(6,'0')+'_000000.png':null}));
-      if(!example.inputs.length)throw new Error('Current collage inputs are unavailable');
-      if(dimension.id==='text-control'){
-        const prompt=avm.entry.scenePrompts?.[example.scene]||scene,texts=prompt.prompts||[];
-        example.prompt_segments=example.prompt_segments.map((part,i)=>({...part,text:texts[i]||part.text}));
-      }
-      example.current_sample=sample;
-    return example;
-  }
-  function loadDimension(index){
-    const dimension=data.dimensions[index];
-    if(readyDimensions.has(dimension.id))return Promise.resolve();
-    if(!dimensionLoads.has(dimension.id))dimensionLoads.set(dimension.id,resolveDimension(dimension).then(example=>{dimension.cases[0]=example;readyDimensions.add(dimension.id);}).finally(()=>dimensionLoads.delete(dimension.id)));
-    return dimensionLoads.get(dimension.id);
-  }
+  const media = AVMHomepageAssets.resolve;
+  const data = await AVMHomepageAssets.json('assets/comparisons.json.gz');
+  const order = ['camera-control','text-control','dynamics','sparse-reconstruction','4d-reconstruction','revisiting'];
+  data.dimensions.sort((a,b) => order.indexOf(a.id) - order.indexOf(b.id));
   const selectedMethods=new Set(data.dimensions.flatMap(d=>d.cases.flatMap(c=>c.clips.map(v=>v.method))));
   const methodOrder=[...selectedMethods];let draggingMethod=null,dragOrder=null,dragCommitted=false;
   const layoutAnimations=new Map(),reducedMotion=matchMedia('(prefers-reduced-motion: reduce)');
   const pageScale=()=>parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--page-scale'))||1;
-  let active=null,visible=false,wantsPlay=true,dimensionIndex=0,renderVersion=0,retryTimer=null;
+  let active=null,visible=false,wantsPlay=true,dimensionIndex=0;
   const groups=new WeakMap();
-  let resultsPromise=null;
-  function resultsReady(){if(window.YuzuResults)return Promise.resolve(window.YuzuResults);if(!resultsPromise)resultsPromise=new Promise((resolve,reject)=>{const timer=setTimeout(()=>reject(new Error('Camera catalogue unavailable')),30000);window.addEventListener('yuzu-results-ready',()=>{clearTimeout(timer);resolve(window.YuzuResults);},{once:true});});return resultsPromise;}
   function el(tag,css,text){const node=document.createElement(tag);if(css)node.className=css;if(text)node.textContent=text;return node;}
   function button(text,label){const b=el('button','comparison-button',text);b.type='button';b.setAttribute('aria-label',label||text);return b;}
   const track=el('div','comparison-track');
@@ -162,7 +100,7 @@
     function updatePrompt(frame){const prompt=example.prompt_segments?.filter(item=>item.start_frame<=frame).at(-1);if(prompt)cells.forEach(cell=>{const label=cell.querySelector('.comparison-prompt-overlay');label.textContent=prompt.summary||prompt.text;});}
     function waitMedia(video,event,ready,signal){return new Promise(resolve=>{if(signal.aborted||video.error){resolve(false);return;}if(ready()){resolve(true);return;}const finish=ok=>{clearTimeout(timer);video.removeEventListener(event,success);video.removeEventListener('error',failure);signal.removeEventListener('abort',failure);resolve(ok);},success=()=>finish(true),failure=()=>finish(false),timer=setTimeout(failure,15000);video.addEventListener(event,success);video.addEventListener('error',failure);signal.addEventListener('abort',failure);});}
     async function prepare(video,time,signal){const loaded=waitMedia(video,'canplay',()=>video.readyState>=3,signal);video.preload='auto';if(video.readyState===0&&video.networkState!==2)video.load();if(!await loaded||signal.aborted)return false;if(Math.abs(video.currentTime-time)>.001)video.currentTime=time;if(!await waitMedia(video,'seeked',()=>!video.seeking,signal))return false;return waitMedia(video,'canplay',()=>video.readyState>=3,signal);}
-    const group={players,example,controller:null,targetFps:example.clips[0].fps,currentReady:AVMHomepageAssets.mode!=='manifold'||readyDimensions.has(dimension.id),
+    const group={players,example,controller:null,targetFps:example.clips[0].fps,
       hasSelection:()=>indices().length>0,
       shownPlayers:()=>indices().map(i=>players[i]),
       seek(frame){players.forEach((v,i)=>{if(v.readyState>=1)v.currentTime=Math.max(0,Math.min(frame,example.frame_count-1))/example.clips[i].fps;});group.controller?.setTime(frame/group.targetFps);updatePrompt(frame);},
@@ -176,7 +114,7 @@
         empty.hidden=shown.length>0;animateLayout(before);masterIndex=shown[0]??0;master=players[masterIndex];group.seek(frame);if(active===group&&visible&&wantsPlay)group.start(frame);
       },
       async start(frame=master.currentTime*example.clips[masterIndex].fps){
-        if(!group.currentReady||active!==group||!visible||!wantsPlay||!group.hasSelection()||startController||callback!==null)return;
+        if(active!==group||!visible||!wantsPlay||!group.hasSelection()||startController||callback!==null)return;
         group.stop();const request=new AbortController();startController=request;const shown=indices();
         try{const ready=await Promise.all(shown.map(i=>prepare(players[i],Math.max(0,Math.min(frame,example.frame_count-1))/example.clips[i].fps,request.signal)));if(request.signal.aborted||active!==group||!visible||!wantsPlay)return;const available=shown.filter((i,j)=>ready[j]);if(!available.length)return;playbackIndices=available;available.forEach(i=>{players[i].playbackRate=example.clips[0].fps/example.clips[i].fps;});if(!available.includes(masterIndex)){masterIndex=available[0];master=players[masterIndex];}group.controller?.setTime(frame/group.targetFps);await Promise.allSettled(available.map(i=>players[i].play()));if(!request.signal.aborted&&active===group&&visible&&wantsPlay){schedule();}else if(active!==group||!wantsPlay)group.stop();}finally{if(startController===request)startController=null;}
       }
@@ -197,7 +135,7 @@
       playbackIndices.filter(i=>i!==masterIndex).forEach(i=>{const v=players[i],expected=frame/example.clips[i].fps;if(v.readyState>=1&&Math.abs(v.currentTime-expected)*example.clips[i].fps>1)v.currentTime=expected;});group.controller?.setTime(frame/group.targetFps);updatePrompt(frame);schedule();
     }
     players.forEach((video,i)=>video.addEventListener('waiting',()=>{if(active===group&&visible&&wantsPlay&&playbackIndices.includes(i)&&!startController){const frame=master.currentTime*example.clips[masterIndex].fps;group.stop();group.start(frame);}}));
-    (async()=>{await Promise.resolve();const results=group.currentReady?await resultsReady():null,registered=Object.values(results?.catalogue.examples||{}).find(item=>item.dataset===dimension.dataset&&item.scene_id===example.scene),source=(AVMHomepageAssets.mode==='manifold'?null:registered)||{id:example.id,video:example.clips.find(clip=>clip.method==='AVM').video,media:{fps:example.clips[0].fps},inputs:example.inputs};const cameras=!group.currentReady?example.camera_data:AVMHomepageAssets.mode==='manifold'||registered?await results.getCameraData(source):example.camera_data;if(cameras?.target.frames.length>example.frame_count)cameras.target.frames=cameras.target.frames.slice(0,example.frame_count);if(!cameras)throw new Error('Scene camera records unavailable');if(!article.isConnected)return;const references=example.inputs.map((asset,i)=>({type:asset.type||'image',source_id:source.inputs[i].source_id,url:media(asset.url),element:inputButtons[i].firstChild}));group.targetFps=cameras.target.fps;group.controller=WCMCameraViewer.mount(viewer,cameras,null,{compact:true,theme:'light',references,onPlaybackToggle:toggle,onSelectContext:selection=>{const index=references.findIndex(reference=>reference.source_id===selection.source_id);if(index<0)return;inputIndex=index;inputButtons.forEach((button,i)=>{button.hidden=i!==inputIndex;});group.controller.highlightContext(selection.source_id);}});group.controller.setPlaybackState(wantsPlay&&visible);group.controller.highlightTarget(true);if(inputButtons.length>1)group.controller.highlightContext(example.inputs[inputIndex].source_id);group.controller.setTime(master.currentTime*example.clips[masterIndex].fps/group.targetFps);})().catch(()=>{if(article.isConnected){viewer.textContent='Camera views unavailable.';viewer.classList.add('result-error');}});
+    (async()=>{const cameras=await AVMHomepageAssets.json(example.camera);if(cameras?.target.frames.length>example.frame_count)cameras.target.frames=cameras.target.frames.slice(0,example.frame_count);if(!cameras)throw new Error('Scene camera records unavailable');if(!article.isConnected)return;const references=example.inputs.map((asset,i)=>({type:asset.type||'image',source_id:asset.source_id,url:media(asset.url),element:inputButtons[i].firstChild}));group.targetFps=cameras.target.fps;group.controller=AVMCameraViewer.mount(viewer,cameras,null,{compact:true,theme:'light',references,onPlaybackToggle:toggle,onSelectContext:selection=>{const index=references.findIndex(reference=>reference.source_id===selection.source_id);if(index<0)return;inputIndex=index;inputButtons.forEach((button,i)=>{button.hidden=i!==inputIndex;});group.controller.highlightContext(selection.source_id);}});group.controller.setPlaybackState(wantsPlay&&visible);group.controller.highlightTarget(true);if(inputButtons.length>1)group.controller.highlightContext(example.inputs[inputIndex].source_id);group.controller.setTime(master.currentTime*example.clips[masterIndex].fps/group.targetFps);})().catch(()=>{if(article.isConnected){viewer.textContent='Camera views unavailable.';viewer.classList.add('result-error');}});
     group.updateSelection();
     groups.set(article,group);return article;
   }
@@ -207,26 +145,14 @@
     tabs.append(b);return b;
   });
   function render(index){
-    clearTimeout(retryTimer);retryTimer=null;
-    const version=++renderVersion;
     const dimension=data.dimensions[index],example=dimension.cases[0],available=new Set(example.clips.map(v=>v.method));methodCheckboxes.forEach(checkbox=>{const pinned=checkbox.dataset.method==='AVM',unavailable=!available.has(checkbox.dataset.method);checkbox.disabled=pinned||unavailable;const label=checkbox.closest('label');label.parentElement.hidden=unavailable;label.classList.toggle('unavailable',unavailable);label.title=pinned?'AVM is always shown.':'';});
     let article,next;try{article=card(example,dimension);next=groups.get(article);}catch(error){console.warn('Comparison tab render failed',dimension.id,error);return;}
     const previous=active;track.replaceChildren(article);active=next;dimensionIndex=index;previous?.dispose();
     dimensionButtons.forEach((b,i)=>{b.setAttribute('aria-selected',String(i===index));b.tabIndex=i===index?0:-1;});track.setAttribute('aria-labelledby',dimensionButtons[index].id);
     syncButton();if(visible&&wantsPlay)active.start();
-    status.replaceChildren();host.setAttribute('aria-busy',String(!active.currentReady));
-    if(!active.currentReady){
-      let retryDelay=1000;
-      const loadCurrent=()=>{
-        if(renderVersion!==version)return;
-        loadDimension(index).then(()=>{const refresh=()=>{if(renderVersion!==version)return;if(draggingMethod){setTimeout(refresh,100);return;}render(index);};refresh();})
-          .catch(error=>{console.warn('Current comparison will retry',error);if(renderVersion!==version)return;retryTimer=setTimeout(loadCurrent,retryDelay);retryDelay=Math.min(30000,retryDelay*2);});
-      };
-      loadCurrent();
-    }
+    status.replaceChildren();host.setAttribute('aria-busy','false');
   }
   new IntersectionObserver(entries=>{visible=entries[0].isIntersecting;if(visible&&wantsPlay)active?.start();else active?.stop();},{threshold:.15}).observe(host);
   document.addEventListener('visibilitychange',()=>{if(document.hidden)active?.stop();else if(visible&&wantsPlay)active?.start();});
-  setInterval(async()=>{if(document.hidden||AVMHomepageAssets.mode!=='manifold'||manifestRevision===null)return;try{const latest=await jsonAsset(manifestUrl+'?v='+Date.now());if(sourceSignature(latest)!==manifestRevision)location.reload();}catch(error){console.warn('Current collage refresh will retry',error);}},60000);
-  skeleton.remove();host.classList.remove('comparison-pending');render(0);syncButton();window.YuzuComparisons={data,getState:()=>({dimension:data.dimensions[dimensionIndex].id,scene:active?.example.scene,playing:wantsPlay,loading:!active?.currentReady,methods:methodOrder.filter(method=>selectedMethods.has(method)),methodOrder:[...methodOrder]}),getPlayers:()=>active?.shownPlayers()||[],getController:()=>active?.controller};
+  skeleton.remove();host.classList.remove('comparison-pending');render(0);syncButton();window.AVMComparisons={data,getState:()=>({dimension:data.dimensions[dimensionIndex].id,scene:active?.example.scene,playing:wantsPlay,loading:!active,methods:methodOrder.filter(method=>selectedMethods.has(method)),methodOrder:[...methodOrder]}),getPlayers:()=>active?.shownPlayers()||[],getController:()=>active?.controller};
 })().catch(error=>{console.warn('Comparison initialization failed',error);});

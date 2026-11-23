@@ -1,7 +1,4 @@
-/* Geometry shared with the Yuzu collage camera viewer (source SHA256 in example.json).
- * Homepage additions: append spatial context while preserving the current orbit,
- * and color observed/generated/retrieved views with the DRAW semantic palette.
- */
+/* Camera poses, frustums and playback controls. */
 (function (global) {
   'use strict';
   const add = (a, b) => a.map((value, i) => value + b[i]);
@@ -34,7 +31,7 @@
   }
 
   function validateData(data) {
-    if (data?.schema !== 'wcm.camera_paths/1' || data.coordinate_system !== 'opencv_c2w' ||
+    if (data?.schema !== 'avm.camera_paths/1' || data.coordinate_system !== 'opencv_c2w' ||
         !Array.isArray(data.contexts) || !Array.isArray(data.target?.frames) || !data.target.frames.length) {
       throw new Error('Camera paths are unavailable');
     }
@@ -586,5 +583,5 @@
           if (videoCallback !== null) video.cancelVideoFrameCallback(videoCallback); }
       }};
   }
-  global.WCMCameraViewer = {mount, validateData, frustumVertices, frameAt, chaseBasis, contextIds};
+  global.AVMCameraViewer = {mount, validateData, frustumVertices, frameAt, chaseBasis, contextIds};
 })(globalThis);
